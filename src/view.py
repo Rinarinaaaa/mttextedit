@@ -6,16 +6,9 @@ import sys
 
 class View:
     def __init__(self, stdscr):
+        self.stdscr = stdscr
         self.offset_y = 0
         self.offset_x = 0
-
-    def run(self, stdscr):
-        self.stdscr = stdscr
-        curses.curs_set(0)
-        self._init_colors()
-        self._draw_interface()
-        while True:
-            self._draw_text(self.text_lines, self.user_positions)
 
     def _init_colors(self):
         curses.start_color()
@@ -32,7 +25,7 @@ class View:
             elif y == 1 and len(text_lines) == 0:
                 self.stdscr.addstr(y, 0, " "*(width-1))
         for user_x, user_y in user_positions.values():
-            if len(text_lines) == 0:
+            if len(text_lines) == 0 or user_x >= len(text_lines[user_y]):
                 self.stdscr.addstr(
                     user_y + 1, user_x, " ", curses.color_pair(2))
             else:

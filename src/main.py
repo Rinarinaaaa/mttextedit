@@ -1,6 +1,22 @@
 import re
-from duplex_websocket import DuplexWebsocket
+import termios
+from mttext_app import MtTextEditApp
 import sys
+
+original_attributes = termios.tcgetattr(sys.stdin)
+
+
+def disable_echo():
+    """Отключает эхо и переводит терминал в неканонический режим."""
+    new_attr = termios.tcgetattr(sys.stdin)
+    new_attr[3] &= ~termios.ECHO  # Отключаем эхо
+    new_attr[3] &= ~termios.ICANON  # Неканонический режим (посимвольный ввод)
+    termios.tcsetattr(sys.stdin, termios.TCSANOW, new_attr)
+
+
+def restore_echo():
+    """Восстанавливает оригинальные настройки терминала."""
+    termios.tcsetattr(sys.stdin, termios.TCSANOW, original_attributes)
 
 
 def connect_to_session():
@@ -9,7 +25,7 @@ def connect_to_session():
     if not r.match(conn_ip):
         print("Wrong connection ip address")
         return 0
-    socket = DuplexWebsocket("clientName", daemon=True)
+    socket = MtTextEditApp("clientName")
     socket.connect(conn_ip)
     socket.join()
 
@@ -23,16 +39,18 @@ def host_session():
     except IOError as e:
         print("File does not exist :(")
         return
-    socket = DuplexWebsocket("serverName", filetext, daemon=True)
+    socket = MtTextEditApp("serverName", filetext)
     socket.run()
     socket.join()
 
 
 def main():
+    disable_echo()
     if sys.argv[1] == '-C':
         connect_to_session()
     if sys.argv[1] == '-H':
         host_session()
+    restore_echo()
 
 
 if __name__ == '__main__':
