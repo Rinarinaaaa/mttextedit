@@ -11,8 +11,13 @@ class MtTextEditApp():
     _username: str
 
     def __init__(self, username: str, filetext: str = ""):
-        self._model = Model(filetext)
-        self._model.add_user(username)
+        self._model = Model(filetext, username)
+        self._func_by_key_pressed = {
+            "Key.left": self._model.user_pos_shifted_left,
+            "Key.right": self._model.user_pos_shifted_right,
+            "Key.down": self._model.user_pos_shifted_down,
+            "Key.up": self._model.user_pos_shifted_up,
+        }
         self._username = username
         self._send_queue = asyncio.Queue()
         self._key_queue = asyncio.Queue()
@@ -27,24 +32,20 @@ class MtTextEditApp():
         await self._send_queue.put(item)
 
     async def parse_key(self, key):
-        loop = asyncio.get_event_loop()
-        move_keys = {"Key.up", "Key.down", "Key.up", "Key.right", "Key.left"}
         try:
-            if len(key) != 1:
-                if key not in move_keys:
-                    return
-                if key == "Key.left":
-                    await loop.run_in_executor(self._model.user_pos_shifted_left, self._username)
-                    await self.send(
-                        f"{self._username} -M {self._model.user_positions[self._username]}")
-                if key == "Key.right":
-                    await loop.run_in_executor(None, self._model.user_pos_shifted_right, self._username)
-                    await self.send(
-                        f"{self._username} -M {self._model.user_positions[self._username]}")
-            else:
-                await loop.run_in_executor(None, self._model.user_wrote_char, self._username, key)
+            if key in self._func_by_key_pressed.keys():
+                await self._func_by_key_pressed[key](self._username)
+                user_x, user_y = self._model.user_positions[self._username]
                 await self.send(
-                    f"{self._username} -E {key} {str(self._model.user_positions[self._username])}")
+                    f"{self._username} -M {str(user_x)} {str(user_y)}")
+            else:
+                if len(key) == 1:
+                    await self._model.user_wrote_char(self._username, key)
+                if key == "Key.space":
+                    await self._model.user_wrote_char(self._username, ' ')
+                user_x, user_y = self._model.user_positions[self._username]
+                await self.send(
+                    f"{self._username} -E {key}")
         except Exception as e:
             print(f"{e}")
 
@@ -68,7 +69,14 @@ class MtTextEditApp():
 
     async def _consumer_handler(self, websocket):
         async for message in websocket:
-            print(f"{message}")
+            args = message.split(' ')
+            if args[0] not in self._model.users:
+                await self._model.add_user(args[0])
+            if args[1] == '-T':
+                await self._model.text_upload(' '.join(args[1:]))
+            if args[1] == '-M':
+                await self._model.user_pos_update(args[0],
+                                                  int(args[2]), int(args[3]))
 
     async def _producer_handler(self, websocket):
         while True:
@@ -78,8 +86,8 @@ class MtTextEditApp():
             except ConnectionClosedOK:
                 break
 
-    async def _handler(self, websocket):
-        await self.send(f"{self._username} -T ")
+    async def _connection_handler(self, websocket):
+        await self.send(f"{self._username} -T {'\n'.join(self._model.text_lines)}")
         await asyncio.gather(
             self._consumer_handler(websocket),
             self._producer_handler(websocket),
@@ -87,8 +95,9 @@ class MtTextEditApp():
         )
 
     async def _main(self, should_connect=False, conn_ip=''):
+        asyncio.get_event_loop().run_in_executor(None, self._model.run_view)
         if not should_connect:
-            async with serve(self._handler, "0.0.0.0", 12000) as server:
+            async with serve(self._connection_handler, "0.0.0.0", 12000) as server:
                 await asyncio.Future()
         async with connect('ws://' + conn_ip + ':12000') as client:
             await self.send(f"{self._username} -C {self._username}")
