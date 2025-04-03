@@ -29,7 +29,7 @@ class Model:
     def run_view(self, stdscr):
         self.view = View(stdscr, self._owner_username)
         while True:
-            self.view._draw_text(self.text_lines, self.user_positions)
+            self.view.draw_text(self.text_lines, self.user_positions)
             time.sleep(0.05)
 
     async def add_user(self, username):
