@@ -1,5 +1,4 @@
-from asyncio import Lock, sleep
-import curses
+from asyncio import Lock
 import time
 from view import View
 
@@ -27,14 +26,8 @@ class Model:
         async with self._users_pos_m:
             self.user_positions[username] = (new_x, new_y)
 
-    def run_view(self):
-        curses.wrapper(self._main_loop, self._owner_username)
-
-    def _main_loop(self, stdscr, owner_username):
-        self.view = View(stdscr, owner_username)
-        curses.curs_set(0)
-        self.view._init_colors()
-        self.view._draw_interface()
+    def run_view(self, stdscr):
+        self.view = View(stdscr, self._owner_username)
         while True:
             self.view._draw_text(self.text_lines, self.user_positions)
             time.sleep(0.05)

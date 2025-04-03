@@ -1,13 +1,13 @@
-from asyncio import sleep
 import curses
-import math
-import sys
 
 
 class View:
     def __init__(self, stdscr, owner_username):
         self._owner_username = owner_username
+        curses.curs_set(0)
         self.stdscr = stdscr
+        self._init_colors()
+        self._draw_interface()
         self.offset_y = 0
         self.offset_x = 0
 
@@ -43,11 +43,13 @@ class View:
                     len(text_lines) != 0 and user_x >= len(text_lines[user_y]):
                 self.stdscr.addstr(
                     user_y + 1 - self.offset_y, user_x - self.offset_x, " ", curses.color_pair(2))
-            else:
+            elif 0 <= user_x - self.offset_x <= width - 1 \
+                    and 0 <= user_y - self.offset_y <= height - 3:
                 self.stdscr.addstr(
                     user_y + 1 - self.offset_y, user_x - self.offset_x, text_lines[user_y][user_x], curses.color_pair(2))
         self.stdscr.refresh()
 
     def _draw_interface(self):
-        title = f" MTTEXT "
+        height, width = self.stdscr.getmaxyx()
+        title = " MTTEXT " + " " * (width - 8)
         self.stdscr.addstr(0, 0, title, curses.color_pair(2))
