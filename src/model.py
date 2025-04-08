@@ -108,8 +108,13 @@ class Model:
         if user_x == 0:
             if user_y == 0:
                 return
+            user_x = len(self.text_lines[user_y - 1])
             async with self._text_m:
                 self.text_lines[user_y - 1] += self.text_lines.pop(user_y)
+            user_y -= 1
+            async with self._users_pos_m:
+                self.user_positions[username] = (user_x, user_y)
+            return
         else:
             async with self._text_m:
                 self.text_lines[user_y] = self.text_lines[user_y][:user_x - 1] + \
