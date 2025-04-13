@@ -1,6 +1,7 @@
 import asyncio
 import curses
 from model import Model
+import websockets
 from websockets import connect
 from websockets import serve
 from websockets.exceptions import ConnectionClosedOK
@@ -11,11 +12,13 @@ class MtTextEditApp():
     _username: str
     _server = None
     _client = None
+    _connections = []
 
     def __init__(self, username: str, filetext: str = "", debug=False, file_path=None):
         self.debug = debug
         self._model = Model(filetext, username, file_path)
         self._file_path = None
+        self._is_host = file_path != None
         self._func_by_user_key = {
             curses.KEY_LEFT: self._model.user_pos_shifted_left,
             curses.KEY_RIGHT: self._model.user_pos_shifted_right,
@@ -47,13 +50,13 @@ class MtTextEditApp():
         curses.wrapper(self._main, True, conn_ip)
 
     async def stop(self):
-        await self._model.stop_view()
+        await self.send(f"{self._username} " + ("-DCH" if self._is_host else "-DC"))
+        await asyncio.sleep(0.5)
         self._stop = True
+        await self._model.stop_view()
         if self._client != None:
-            self._client.close()
-        if self._server != None:
-            self._server.close()
-        # asyncio.get_event_loop().stop()
+            self._client.close_timeout = 0
+            await self._client.close()
 
     async def send(self, item):
         await self._send_queue.put(item)
@@ -77,14 +80,15 @@ class MtTextEditApp():
         curses.cbreak()
         self.stdscr.nodelay(True)
         self.stdscr.keypad(True)
-        while not self._stop:
+        while True:
+            if self._stop:
+                return
             key = self.stdscr.getch()
             if key != -1:
                 if self.debug:
                     print(key)
                 await self._parse_key(key)
             await asyncio.sleep(0.01)
-        pass
 
     async def _consumer_handler(self, websocket):
         async for message in websocket:
@@ -93,10 +97,17 @@ class MtTextEditApp():
             args = message.split(' ')
             if self.debug:
                 print(message)
-            if args[0] not in self._model.users:
+            if args[0] == self._username:
+                continue
+            if args[1] == '-C':
                 await self._model.add_user(args[0])
             if args[1] == '-T':
                 await self._model.text_upload(' '.join(args[2:]))
+            if args[1] == '-U' and not hasattr(self, "_initialized"):
+                self._initialized = True
+                for i in range(2, len(args) - 2, 3):
+                    await self._model.add_user(args[i])
+                    await self._model.user_pos_update(args[i], int(args[i + 1]), int(args[i + 2]))
             if args[1] == '-M':
                 await self._model.user_pos_update(args[0],
                                                   int(args[2]), int(args[3]))
@@ -104,24 +115,42 @@ class MtTextEditApp():
                 await self._model.user_wrote_char(args[0], args[2] if args[2] != '/s' else ' ')
             if args[1] == '-D':
                 await self._model.user_deleted_char(args[0])
+            if args[1] == '-DC':
+                await self._model.user_disconnected(args[0])
             if args[1] == '-NL':
                 await self._model.user_added_new_line(args[0])
+            if self._is_host:
+                await self.send(message)
 
     async def _producer_handler(self, websocket):
-        while not self._stop:
+        while True:
+            if self._stop:
+                return
             message = await self._send_queue.get()
             try:
                 await websocket.send(message)
             except ConnectionClosedOK:
                 break
 
-    async def _connection_handler(self, websocket):
+    async def _server_producer_handler(self):
+        while True:
+            if self._stop:
+                return
+            message = await self._send_queue.get()
+            try:
+                for connection in self._connections:
+                    await connection.send(message)
+            except ConnectionClosedOK:
+                break
+
+    async def _connection_handler(self, websocket: websockets.ServerConnection):
         await self.send(f"{self._username} -T {'\n'.join(self._model.text_lines)}")
-        await asyncio.gather(
-            self._consumer_handler(websocket),
-            self._producer_handler(websocket)
-        )
-        pass
+        user_pos = [await self._model.get_user_pos(
+            x) for x in self._model.users]
+        user_pos_strings = [f"{x[0]} {x[1]}" for x in user_pos]
+        await self.send(f"{self._username} -U {' '.join([f"{x[0]} {x[1]}" for x in zip(self._model.users, user_pos_strings)])}")
+        self._connections.append(websocket)
+        await self._consumer_handler(websocket)
 
     def _main(self, *args, **kwargs):
         asyncio.run(self._async_main(*args, **kwargs))
@@ -132,8 +161,12 @@ class MtTextEditApp():
         if not self.debug:
             asyncio.get_event_loop().run_in_executor(None, self._model.run_view, stdscr)
         if not should_connect:
-            self._server = await serve(self._connection_handler, "0.0.0.0", 12000)
-            await self._input_handler()
+            server = await serve(self._connection_handler, "0.0.0.0", 12000)
+            await asyncio.gather(
+                self._input_handler(),
+                self._server_producer_handler()
+            )
+            server.close()
         else:
             self._client = await connect('ws://' + conn_ip + ':12000')
             await self.send(f"{self._username} -C {self._username}")

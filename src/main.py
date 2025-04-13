@@ -9,7 +9,7 @@ def connect_to_session(debug, offset):
     if not r.match(conn_ip):
         print("Wrong connection ip address")
         return 0
-    socket = MtTextEditApp("clientName", debug=debug)
+    socket = MtTextEditApp(sys.argv[3 + offset], debug=debug)
     socket.connect(conn_ip)
 
 
@@ -21,7 +21,7 @@ def host_session(debug, offset):
     except IOError:
         print("File does not exist :(")
         return
-    socket = MtTextEditApp("serverName", filetext,
+    socket = MtTextEditApp(sys.argv[3 + offset], filetext,
                            debug=debug, file_path=file_path)
     socket.run()
 

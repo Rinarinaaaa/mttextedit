@@ -20,6 +20,10 @@ class Model:
         if text == "":
             self.text_lines = [""]
 
+    async def get_user_pos(self, username):
+        async with self._users_pos_m:
+            return self.user_positions[username]
+
     async def save_file(self):
         if self._file_path == None:
             return
@@ -27,6 +31,11 @@ class Model:
             with open(self._file_path, "w") as f:
                 text = "\n".join(self.text_lines)
                 f.write(text)
+
+    async def user_disconnected(self, username):
+        async with self._users_m, self._users_pos_m:
+            self.users.remove(username)
+            self.user_positions.pop(username)
 
     async def text_upload(self, text: str):
         async with self._text_m:
