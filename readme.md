@@ -1,10 +1,13 @@
 multi-user text editor
 
+CTRL+C for exiting
+
+CTRL+S for saving changes if you are hosting session
 
 #args to host session: 
- -H [file_path]
+ -H [file_path] [username]
 #connect to session:
- -C [conn_ip]
+ -C [conn_ip] [username]
 #for debug add -D as first arg
 
 #internal message format:
