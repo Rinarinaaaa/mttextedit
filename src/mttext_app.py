@@ -51,7 +51,7 @@ class MtTextEditApp():
 
     async def stop(self):
         await self.send(f"{self._username} " + ("-DCH" if self._is_host else "-DC"))
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)
         self._stop = True
         await self._model.stop_view()
         if self._client != None:
@@ -97,17 +97,20 @@ class MtTextEditApp():
             args = message.split(' ')
             if self.debug:
                 print(message)
-            if args[0] == self._username:
-                continue
-            if args[1] == '-C':
-                await self._model.add_user(args[0])
-            if args[1] == '-T':
-                await self._model.text_upload(' '.join(args[2:]))
             if args[1] == '-U' and not hasattr(self, "_initialized"):
                 self._initialized = True
                 for i in range(2, len(args) - 2, 3):
+                    if args[i] == self._username:
+                        await self.stop()
+                        print("Sorry, server already have user with your username")
                     await self._model.add_user(args[i])
                     await self._model.user_pos_update(args[i], int(args[i + 1]), int(args[i + 2]))
+            if args[1] == '-C' and args[0] not in self._model.users:
+                await self._model.add_user(args[0])
+            if args[0] == self._username or args[0] not in self._model.users:
+                continue
+            if args[1] == '-T':
+                await self._model.text_upload(' '.join(args[2:]))
             if args[1] == '-M':
                 await self._model.user_pos_update(args[0],
                                                   int(args[2]), int(args[3]))
@@ -137,19 +140,19 @@ class MtTextEditApp():
             if self._stop:
                 return
             message = await self._send_queue.get()
-            try:
-                for connection in self._connections:
+            for connection in self._connections:
+                try:
                     await connection.send(message)
-            except ConnectionClosedOK:
-                break
+                except ConnectionClosedOK:
+                    self._connections.remove(connection)
 
     async def _connection_handler(self, websocket: websockets.ServerConnection):
-        await self.send(f"{self._username} -T {'\n'.join(self._model.text_lines)}")
+        self._connections.append(websocket)
         user_pos = [await self._model.get_user_pos(
             x) for x in self._model.users]
         user_pos_strings = [f"{x[0]} {x[1]}" for x in user_pos]
         await self.send(f"{self._username} -U {' '.join([f"{x[0]} {x[1]}" for x in zip(self._model.users, user_pos_strings)])}")
-        self._connections.append(websocket)
+        await self.send(f"{self._username} -T {'\n'.join(self._model.text_lines)}")
         await self._consumer_handler(websocket)
 
     def _main(self, *args, **kwargs):
